@@ -5,7 +5,7 @@ const CONFIG = require('./core/config');
 
 const PORT = CONFIG.PORT;
 
-const urlPrefix = "/users";
+const urlPrefix = "/ai/interview/";
 
 
 (async () => {

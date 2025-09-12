@@ -43,7 +43,17 @@ const get_questions_schema = {
                 type: "string",
                 description: "Full job description text to contextualize the interview questions",
                 example: "We are looking for a Node.js backend developer with experience in PostgreSQL, Redis, and scalable APIs."
-            }
+          },
+            company : {
+                type: "string",
+                description: "Name of the company",
+                example: "Google"
+          },
+            have_jd : {
+                type: "boolean",
+                description: "Indicates whether the job description is provided",
+                example: true
+          }
         },
         required: ["role", "difficulty"],
         additionalProperties: false

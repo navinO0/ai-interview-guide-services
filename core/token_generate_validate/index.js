@@ -56,9 +56,9 @@ async function validateAccessToken({ request }, reply, app) {
                             return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
                         }
                          const cachedData = await getCacheValue(decoded.username + CONFIG.REDIS.DEVICES_KEY)
-                        // if (!cachedData) {
-                        //     return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
-                        // }
+                        if (!cachedData) {
+                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
+                        }
                         const devices = JSON.parse(cachedData)
                             const exist = devices.find(e => e.
                                 fingerprint === decoded.

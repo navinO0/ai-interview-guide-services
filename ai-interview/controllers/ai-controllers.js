@@ -14,18 +14,34 @@ async function DEMO(request, reply) {
 
 async function GET_QUESTION(request, reply) {
     try {
-        const role = request.query.role || "backend developer";
-        const level = request.query.difficulty || "medium";
-        const topic = request.query.topic || "";
+        const role = request.body.role || "backend developer";
+        const level = request.body.difficulty || "medium";
+        const topic = request.body.topic || "";
         const userId = request.user_info.id
+        const have_jd = request.body.have_jd || false;
+        const job_description = request.body.jobDescription || "";
+        const company = request.body.company || "";
         const count = 2;
 
         const prompt = `
-        Ask ONE clear and direct ${topic ? `about ${topic} ` : ""} interview question 
-        for a ${role} role at ${level} level.  
-        Make sure the question is relevant, concise, and grammatically correct.  
-        Return only the question, nothing else.
+            Ask ONE clear and direct interview question.  
+            
+            ${have_jd 
+            ? `Base the question strictly on the following job description (JD):\n${job_description}\n`
+            : `Base the question on the given context:\n${topic ? `- Topic: ${topic}\n` : ""}- Role: ${role}\n- Level: ${level}\n`
+            }
+
+            ${topic && topic.toLowerCase() === "coding" 
+            ? "The question must be a coding challenge(with code snippet). Format the response in Markdown with sections like **Problem Statement**, **Input Format**, **Output Format**, and include at least one example inside a fenced code block (```)." 
+            : "Format the question in Markdown (e.g., start with a heading ###, bold important keywords if needed)."
+            }
+
+            Make sure the question is relevant, concise, and grammatically correct.  
+            Return only the question, nothing else.
         `;
+
+
+
 
         const response = await this.AiModel.generateContent(prompt);
         const questionText = response.response.text().trim();
@@ -34,6 +50,7 @@ async function GET_QUESTION(request, reply) {
             question: questionText,
             difficulty: 1,
             user_id: userId,
+            company: company
         };
 
         const questionResponse = await this.knex
@@ -110,12 +127,12 @@ async function GET_FEEDBACK(request, reply) {
 
 async function HISTORY(request, reply) {
     try {
-         
+         const user_id = request.user_info.id
         const query = `
       SELECT a.question_id, q.question, a.actual_answer, a.answer
       FROM answers a
       LEFT JOIN questions q ON a.question_id = q.id 
-      WHERE q.user_id = ${request.user_info.id};
+      WHERE q.user_id = ${user_id};
     `
     const getHistory = await this.knex.raw(query);
 
