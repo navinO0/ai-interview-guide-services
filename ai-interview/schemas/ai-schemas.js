@@ -53,9 +53,14 @@ const get_questions_schema = {
                 type: "boolean",
                 description: "Indicates whether the job description is provided",
                 example: true
+          },
+            question_type : {
+                type: "string",
+                description: "Type of the interview question",
+                example: "coding"
           }
         },
-        required: ["role", "difficulty"],
+        required: ["role"],
         additionalProperties: false
     }
 }

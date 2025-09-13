@@ -14,26 +14,30 @@ async function DEMO(request, reply) {
 
 async function GET_QUESTION(request, reply) {
     try {
-        const role = request.body.role || "backend developer";
-        const level = request.body.difficulty || "medium";
-        const topic = request.body.topic || "";
-        const userId = request.user_info.id
-        const have_jd = request.body.have_jd || false;
-        const job_description = request.body.jobDescription || "";
-        const company = request.body.company || "";
+        const {
+            role = "backend developer",
+            difficulty: level = "easy",
+            topic = "",
+            have_jd = false,
+            jobDescription: job_description = "",
+            company = "",
+            question_type = "General"
+        } = request.body,
+            { id: userId } = request.user_info;
+
         const count = 2;
 
         const prompt = `
             Ask ONE clear and direct interview question.  
             
-            ${have_jd 
-            ? `Base the question strictly on the following job description (JD):\n${job_description}\n`
-            : `Base the question on the given context:\n${topic ? `- Topic: ${topic}\n` : ""}- Role: ${role}\n- Level: ${level}\n`
+            ${have_jd
+                ? `Base the question strictly on the following job description (JD):\n${job_description}\n`
+                : `Base the question on the given context:\n${topic ? `- Topic: ${topic}\n` : ""}- Role: ${role}\n- Level: ${level}\n - question_type: ${question_type}\n`
             }
 
-            ${topic && topic.toLowerCase() === "coding" 
-            ? "The question must be a coding challenge(with code snippet). Format the response in Markdown with sections like **Problem Statement**, **Input Format**, **Output Format**, and include at least one example inside a fenced code block (```)." 
-            : "Format the question in Markdown (e.g., start with a heading ###, bold important keywords if needed)."
+            ${question_type && question_type.toLowerCase() === "coding"
+                ? "The question must be a coding challenge(with code snippet). Format the response in Markdown with sections like **Problem Statement**, **Input Format**, **Output Format**, and include at least one example inside a fenced code block (```)."
+                : "Format the question in Markdown (e.g., start with a heading ###, bold important keywords if needed)."
             }
 
             Make sure the question is relevant, concise, and grammatically correct.  
@@ -50,13 +54,14 @@ async function GET_QUESTION(request, reply) {
             question: questionText,
             difficulty: 1,
             user_id: userId,
-            company: company
+            company: company,
+            question_type: question_type
         };
 
         const questionResponse = await this.knex
-          .insert(sampleQuestion)
-          .into("questions")
-          .returning("id");
+            .insert(sampleQuestion)
+            .into("questions")
+            .returning("id");
 
         //  res.json({
         //      question: questionText,
@@ -127,20 +132,20 @@ async function GET_FEEDBACK(request, reply) {
 
 async function HISTORY(request, reply) {
     try {
-         const user_id = request.user_info.id
+        const user_id = request.user_info.id
         const query = `
       SELECT a.question_id, q.question, a.actual_answer, a.answer
       FROM answers a
       LEFT JOIN questions q ON a.question_id = q.id 
       WHERE q.user_id = ${user_id};
     `
-    const getHistory = await this.knex.raw(query);
+        const getHistory = await this.knex.raw(query);
 
-    replySuccess(reply, { history: getHistory.rowCount ? getHistory.rows : getHistory });
-  } catch (err) {
-    console.error("Error fetching history:", err);
-    replyError(reply,{ ...err,error: "Failed to get answer history" });
-  }
+        replySuccess(reply, { history: getHistory.rowCount ? getHistory.rows : getHistory });
+    } catch (err) {
+        console.error("Error fetching history:", err);
+        replyError(reply, { ...err, error: "Failed to get answer history" });
+    }
 }
 
 module.exports = { DEMO, GET_QUESTION, GET_FEEDBACK, HISTORY }
