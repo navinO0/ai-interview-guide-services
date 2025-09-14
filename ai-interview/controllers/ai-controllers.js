@@ -121,7 +121,8 @@ async function GET_FEEDBACK(request, reply) {
         }
 
         await this.knex.insert(jsonParsedResponse).into("answers");
-
+        jsonParsedResponse.userAnswer = answer
+        jsonParsedResponse.question = question
         replySuccess(reply, { feedback: jsonParsedResponse });
     } catch (err) {
         console.error("Error generating question:", err);
