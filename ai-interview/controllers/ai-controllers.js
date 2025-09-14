@@ -25,8 +25,8 @@ async function GET_QUESTION(request, reply) {
         } = request.body,
             { id: userId } = request.user_info;
 
-        const count = 2;
-
+        const questions_asked_raw = await this.knex.raw(`select question from questions q where user_id = ${userId}`)
+        const questions_asked = questions_asked_raw.rowCount > 0 ? questions_asked_raw.rows : []
         const prompt = `
             Ask ONE clear and direct interview question.  
             
@@ -40,7 +40,8 @@ async function GET_QUESTION(request, reply) {
                 : "Format the question in Markdown (e.g., start with a heading ###, bold important keywords if needed)."
             }
 
-            Make sure the question is relevant, concise, and grammatically correct.  
+            Make sure the question is relevant, concise, and grammatically correct.
+            Here are the questions so far asked for the reference purpose to not get duplicate : ${questions_asked}
             Return only the question, nothing else.
         `;
 
@@ -142,7 +143,7 @@ async function HISTORY(request, reply) {
     `
         const getHistory = await this.knex.raw(query);
 
-        replySuccess(reply, { history: getHistory.rowCount ? getHistory.rows : getHistory });
+        replySuccess(reply, { history: getHistory.rowCount > 0 ? getHistory.rows :  [] });
     } catch (err) {
         console.error("Error fetching history:", err);
         replyError(reply, { ...err, error: "Failed to get answer history" });
