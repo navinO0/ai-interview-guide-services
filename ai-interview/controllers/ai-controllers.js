@@ -25,8 +25,13 @@ async function GET_QUESTION(request, reply) {
         } = request.body,
             { id: userId } = request.user_info;
 
-        const questions_asked_raw = await this.knex.raw(`select question from questions q where user_id = ${userId}`)
-        const questions_asked = questions_asked_raw.rowCount > 0 ? questions_asked_raw.rows : []
+        const questions_asked_raw = await this.knex("questions as q")
+            .where("user_id", userId)
+            .whereNot("q.question_type", "coding")
+            .select(this.knex.raw("json_agg(question) as qns"));
+
+        const questions_asked = questions_asked_raw.rowCount > 0 ? questions_asked_raw.rows[0].qns : []
+        const concatQns = questions_asked.join(",")
         const prompt = `
             Ask ONE clear and direct interview question.  
             
@@ -41,14 +46,15 @@ async function GET_QUESTION(request, reply) {
             }
 
             Make sure the question is relevant, concise, and grammatically correct.
-            Here are the questions so far asked for the reference purpose to not get duplicate : ${questions_asked}
+            Here are the questions so far asked for the reference purpose to not get duplicate : ${concatQns}
             Return only the question, nothing else.
         `;
 
 
 
 
-        const response = await this.AiModel.generateContent(prompt);
+        const response = await this.
+            AiModel.generateContent(prompt);
         const questionText = response.response.text().trim();
 
         const sampleQuestion = {
@@ -143,7 +149,7 @@ async function HISTORY(request, reply) {
     `
         const getHistory = await this.knex.raw(query);
 
-        replySuccess(reply, { history: getHistory.rowCount > 0 ? getHistory.rows :  [] });
+        replySuccess(reply, { history: getHistory.rowCount > 0 ? getHistory.rows : [] });
     } catch (err) {
         console.error("Error fetching history:", err);
         replyError(reply, { ...err, error: "Failed to get answer history" });
