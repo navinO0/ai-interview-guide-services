@@ -30,7 +30,7 @@ const get_questions_schema = {
             },
             difficulty: {
                 type: "string",
-                enum: ["easy", "medium", "hard"],
+                // enum: ["easy", "medium", "hard"],
                 description: "Difficulty level of the interview question",
                 example: "medium"
             },
