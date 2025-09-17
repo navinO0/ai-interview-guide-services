@@ -1,5 +1,5 @@
 const { replySuccess, replyError } = require("../../core/core_funcs");
-const { demoservice } = require("../services/ai-services");
+const { demoservice, getDifficultyLevel } = require("../services/ai-services");
 
 async function DEMO(request, reply) {
     try {
@@ -15,7 +15,7 @@ async function DEMO(request, reply) {
 async function GET_QUESTION(request, reply) {
     try {
         const {
-            role = "backend developer",
+            role = "software engineer",
             difficulty: level = "easy",
             topic = "",
             have_jd = false,
@@ -59,10 +59,13 @@ async function GET_QUESTION(request, reply) {
 
         const sampleQuestion = {
             question: questionText,
-            difficulty: 1,
+            difficulty: getDifficultyLevel(level),
             user_id: userId,
             company: company,
-            question_type: question_type
+            question_type: question_type,
+            job_description,
+            topic,
+            role
         };
 
         const questionResponse = await this.knex
@@ -70,10 +73,6 @@ async function GET_QUESTION(request, reply) {
             .into("questions")
             .returning("id");
 
-        //  res.json({
-        //      question: questionText,
-        //     //  qns_id: questionResponse[0].id
-        //  });
         replySuccess(reply, { question: questionText, qns_id: questionResponse[0].id })
     } catch (err) {
         console.error("Error generating question:", err);
@@ -83,7 +82,7 @@ async function GET_QUESTION(request, reply) {
 
 async function GET_FEEDBACK(request, reply) {
     try {
-        const { answer = '', role = "backend developer", question = "what is the use of ai", qns_id = 0 } = request.body;
+        const { answer = '', role = "software engineer", question = "what is the use of ai", qns_id = 0 } = request.body;
 
         const prompt = `You are an expert interviewer and communication coach. 
                 Evaluate the candidate’s answer for a ${role} role.

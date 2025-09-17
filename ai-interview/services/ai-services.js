@@ -10,4 +10,18 @@ return response;
     }
 }
 
-module.exports = {demoservice}
+
+function getDifficultyLevel(difficulty) {
+  switch (difficulty.toLowerCase()) {
+    case "easy":
+      return 1;
+    case "medium":
+      return 2;
+    case "hard":
+      return 3;
+    default:
+      return 0; 
+  }
+}
+
+module.exports = {demoservice, getDifficultyLevel}
