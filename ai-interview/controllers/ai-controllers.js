@@ -141,10 +141,10 @@ async function HISTORY(request, reply) {
     try {
         const user_id = request.user_info.id
         const query = `
-      SELECT a.question_id, q.question, a.actual_answer, a.answer
+      SELECT a.question_id, q.question, a.actual_answer, a.answer, q.role, q.question_type, q.company
       FROM answers a
       LEFT JOIN questions q ON a.question_id = q.id 
-      WHERE q.user_id = ${user_id};
+      WHERE q.user_id = ${user_id} order by q.created_at desc;
     `
         const getHistory = await this.knex.raw(query);
 
