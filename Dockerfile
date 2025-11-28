@@ -1,5 +1,5 @@
 # Use official Node LTS as the base image
-FROM node:18-alpine
+FROM node:23-alpine
 
 
 # Create app directory
