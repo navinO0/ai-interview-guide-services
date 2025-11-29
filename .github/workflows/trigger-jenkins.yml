@@ -1,8 +1,20 @@
+name: Test Jenkins Environment Secrets
+
+on:
+  workflow_dispatch:
+
 jobs:
-  trigger-jenkins:
+  check-env:
     runs-on: ubuntu-latest
+    environment: jenkins-trigger   # <- must match your Environment name exactly
     steps:
-      - name: Ensure secrets present & trigger Jenkins
+      - name: Show runner & trigger info
+        run: |
+          echo "Runner: $(hostname)"
+          echo "Triggered by: manual (workflow_dispatch)"
+          echo "Environment requested: jenkins-trigger"
+
+      - name: Check if environment secrets are injected (safe)
         env:
           JENKINS_URL: ${{ secrets.JENKINS_URL }}
           JENKINS_USER: ${{ secrets.JENKINS_USER }}
@@ -15,11 +27,14 @@ jobs:
           [ -z "$JENKINS_API_TOKEN" ] && missing="${missing} JENKINS_API_TOKEN"
           [ -z "$JENKINS_JOB" ] && missing="${missing} JENKINS_JOB"
 
-          if [ -n "$missing" ]; then
-            echo "ERROR: missing secrets:${missing}"
+          if [ -z "$missing" ]; then
+            echo "✅ All secrets present (values hidden)."
+          else
+            echo "❌ Missing secrets:${missing}"
+            echo "Make sure secrets exist under: Settings → Environments → jenkins-trigger → Secrets"
             exit 1
           fi
 
-          echo "Triggering Jenkins job: $JENKINS_JOB"
-          curl -X POST --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
-            "$JENKINS_URL/job/$JENKINS_JOB/build" -v
+      - name: Check if run is awaiting environment approval (UI)
+        run: |
+          echo "If this job paused earlier and shows 'waiting for approval' in GitHub UI, approve the environment to let secrets be injected."
