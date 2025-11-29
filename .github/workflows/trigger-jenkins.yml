@@ -1,107 +1,4 @@
-name: Trigger Jenkins and wait (environment)
-
-on:
-  workflow_dispatch:
-
-jobs:
-  trigger-jenkins:
-    runs-on: ubuntu-latest
-    environment: jenkins-trigger   # must match your Environment name exactly
-    timeout-minutes: 60
-    steps:
-      - name: Ensure secrets present (sanity)
-        env:
-          JENKINS_URL: ${{ secrets.JENKINS_URL }}
-          JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
-        run: |
-          missing=""
-          [ -z "$JENKINS_URL" ] && missing="${missing} JENKINS_URL"
-          [ -z "$JENKINS_USER" ] && missing="${missing} JENKINS_USER"
-          [ -z "$JENKINS_API_TOKEN" ] && missing="${missing} JENKINS_API_TOKEN"
-          [ -z "$JENKINS_JOB" ] && missing="${missing} JENKINS_JOB"
-          if [ -n "$missing" ]; then
-            echo "ERROR: missing secrets:${missing}"
-            exit 1
-          fi
-          echo "Sanity OK. (values hidden)"
-
-      - name: Validate JENKINS_URL format
-        env:
-          JENKINS_URL: ${{ secrets.JENKINS_URL }}
-        run: |
-          # Must start with http:// or https:// and include a host
-          if ! echo "$JENKINS_URL" | grep -Eiq '^https?://[^/]+(:[0-9]+)?'; then
-            echo "ERROR: JENKINS_URL appears invalid. It must include protocol and host, e.g. https://jenkins.example.com or http://1.2.3.4:8080"
-            exit 1
-          fi
-          echo "JENKINS_URL looks valid."
-
-      - name: Quick connectivity check (HEAD)
-        env:
-          JENKINS_URL: ${{ secrets.JENKINS_URL }}
-          JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "Checking connectivity to Jenkins..."
-          # Allow insecure (if your Jenkins uses self-signed cert), remove -k if not needed
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" --head --retry 2 --retry-delay 2 "${JENKINS_URL}" || true)
-          echo "HTTP status from Jenkins root: $HTTP_STATUS"
-          if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; then
-            echo "ERROR: Could not reach Jenkins from the runner. Check network/firewall (runners must access Jenkins)."
-            exit 2
-          fi
-          # 200 or 403 or 401 are acceptable as "reachable" (401/403 may mean auth required)
-          if [[ "$HTTP_STATUS" =~ ^(2|4) ]]; then
-            echo "Jenkins reachable (status $HTTP_STATUS)."
-          else
-            echo "Unexpected HTTP status: $HTTP_STATUS"
-          fi
-
-      - name: Trigger build (with crumb detection) and capture queue item
-        env:
-          JENKINS_URL: ${{ secrets.JENKINS_URL }}
-          JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
-        run: |
-          set -euo pipefail
-          echo "Getting crumb (if enabled)..."
-          CRUMB_API="$JENKINS_URL/crumbIssuer/api/json"
-          CRUMB_JSON=$(curl -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "${CRUMB_API}" || true)
-          CRUMB_HEADER=()
-          if echo "$CRUMB_JSON" | grep -q '"crumb"'; then
-            CRUMB_FIELD=$(echo "$CRUMB_JSON" | jq -r .crumbRequestField)
-            CRUMB_VALUE=$(echo "$CRUMB_JSON" | jq -r .crumb)
-            echo "Crumb present (field: $CRUMB_FIELD)."
-            CRUMB_HEADER=(-H "${CRUMB_FIELD}: ${CRUMB_VALUE}")
-          else
-            echo "No crumb (crumbIssuer may be disabled); continuing without crumb header."
-          fi
-
-          # Trigger the build; try buildWithParameters then fallback to build
-          TRIGGER_URL="$JENKINS_URL/job/$JENKINS_JOB/build"
-          echo "Triggering: $TRIGGER_URL"
-          # We capture the Location header (queue item URL) if returned
-          RESPONSE_HEADERS=$(mktemp)
-          curl -i -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "${CRUMB_HEADER[@]}" -X POST "$TRIGGER_URL" -D "$RESPONSE_HEADERS" -o /dev/null || true
-          QUEUE_LOC=$(grep -i '^Location:' "$RESPONSE_HEADERS" | awk '{print $2}' | tr -d '\r\n' || true)
-          rm -f "$RESPONSE_HEADERS"
-
-          if [ -n "$QUEUE_LOC" ]; then
-            echo "Queue location from header: $QUEUE_LOC"
-          else
-            # fallback: query queue/api/json and find most recent item for the job (best effort)
-            echo "No Location header returned. Will poll queue API to find an item for the job."
-            QUEUE_LOC="$JENKINS_URL/queue/api/json"
-          fi
-
-          echo "::set-output name=queue_loc::$QUEUE_LOC"
-          echo "Queue location set."
-
-      - name: Poll queue & get build URL
+      - name: Poll queue & get build URL (better)
         env:
           JENKINS_URL: ${{ secrets.JENKINS_URL }}
           JENKINS_USER: ${{ secrets.JENKINS_USER }}
@@ -110,57 +7,55 @@ jobs:
         id: poll_queue
         run: |
           set -euo pipefail
-          QUEUE_URL="$([[ -n "${{ steps.trigger-jenkins.outputs.queue_loc || '' }}" ]] && echo "${{ steps.trigger-jenkins.outputs.queue_loc }}" || echo "${{ secrets.JENKINS_URL }}/queue/api/json")"
-          echo "Polling for build to start from queue: $QUEUE_URL"
+
+          # Use the queue_loc from previous step if present (old syntax warns; adapt if needed)
+          QUEUE_LOC="${{ steps.trigger-jenkins.outputs.queue_loc || '' }}"
+          if [ -n "$QUEUE_LOC" ]; then
+            echo "Will poll specific queue item: $QUEUE_LOC"
+            # Normalize to api/json endpoint for the item
+            # If queue loc ends with a slash, remove it
+            QUEUE_LOC="${QUEUE_LOC%/}"
+            QUEUE_API="${QUEUE_LOC}/api/json"
+            echo "Queue API: $QUEUE_API"
+
+            for i in $(seq 1 120); do
+              sleep 2
+              echo "Checking queue item ($i)..."
+              QITEM=$(curl -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "$QUEUE_API")
+              # Print why/blocked for debugging without leaking secrets
+              echo "$QITEM" | jq -r '.why, .blocked' | sed 's/^/  /'
+              # Try to read executable.url
+              BUILD_URL=$(echo "$QITEM" | jq -r '.executable.url // empty' || true)
+              if [ -n "$BUILD_URL" ]; then
+                echo "Found build URL from queue item: $BUILD_URL"
+                echo "::set-output name=build_url::$BUILD_URL"
+                exit 0
+              fi
+            done
+
+            echo "Timed out waiting for queue item to become an executable."
+            # Fall through to global queue fallback
+          else
+            echo "No specific queue location available; falling back to global queue scan."
+          fi
+
+          # Fallback: scan global queue for the job's executable (best-effort)
+          echo "Polling global queue for job ${JENKINS_JOB}..."
           BUILD_URL=""
           for i in $(seq 1 60); do
             sleep 2
-            # get queue JSON
             QJSON=$(curl -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "${JENKINS_URL}/queue/api/json")
-            # find an item for the job that has executable.url
             BUILD_URL=$(echo "$QJSON" | jq -r --arg JOB "$JENKINS_JOB" '
               .items[]? |
               select(.task.name == $JOB) |
               .executable.url // empty' | head -n1 || true)
             if [ -n "$BUILD_URL" ]; then
               echo "Found build URL: $BUILD_URL"
-              break
+              echo "::set-output name=build_url::$BUILD_URL"
+              exit 0
             fi
             echo "Waiting for Jenkins to assign a build... ($i)"
           done
 
-          if [ -z "$BUILD_URL" ]; then
-            echo "Timed out waiting for build to be created from queue."
-            exit 3
-          fi
-
-          echo "::set-output name=build_url::$BUILD_URL"
-
-      - name: Wait for build to complete
-        env:
-          JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          BUILD_URL="${{ steps.poll_queue.outputs.build_url }}"
-          echo "Polling build: $BUILD_URL"
-          for i in $(seq 1 300); do
-            sleep 5
-            API="${BUILD_URL}api/json"
-            BJ=$(curl -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "$API")
-            RESULT=$(echo "$BJ" | jq -r .result)
-            NUMBER=$(echo "$BJ" | jq -r .number)
-            echo "Build #${NUMBER} result: ${RESULT}"
-            if [ "$RESULT" != "null" ] && [ -n "$RESULT" ]; then
-              if [ "$RESULT" = "SUCCESS" ]; then
-                echo "Build succeeded."
-                exit 0
-              else
-                echo "Build finished with result: $RESULT"
-                exit 1
-              fi
-            fi
-            echo "Still running..."
-          done
-          echo "Timed out waiting for build to finish."
-          exit 4
+          echo "Timed out waiting for build to be created from queue (global fallback)."
+          exit 3
