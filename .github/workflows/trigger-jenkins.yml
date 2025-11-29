@@ -8,9 +8,36 @@ on:
 jobs:
   trigger-jenkins:
     runs-on: ubuntu-latest
+    environment: jenkins-trigger   # <<-- mandatory to access environment secrets
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+          JENKINS_JOB_PATH: ${{ secrets.JENKINS_JOB_PATH }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JENKINS_URL:-}" ]; then
+            echo "ERROR: JENKINS_URL missing"
+            exit 1
+          fi
+          if [ -z "${JENKINS_USER:-}" ]; then
+            echo "ERROR: JENKINS_USER missing"
+            exit 1
+          fi
+          if [ -z "${JENKINS_API_TOKEN:-}" ]; then
+            echo "ERROR: JENKINS_API_TOKEN missing"
+            exit 1
+          fi
+          if [ -z "${JENKINS_JOB_PATH:-}" ]; then
+            echo "ERROR: JENKINS_JOB_PATH missing"
+            exit 1
+          fi
+          echo "All required secrets present."
 
       - name: Get Jenkins Crumb (CSRF) and trigger job
         env:
@@ -18,45 +45,34 @@ jobs:
           JENKINS_USER: ${{ secrets.JENKINS_USER }}
           JENKINS_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
           JENKINS_JOB_PATH: ${{ secrets.JENKINS_JOB_PATH }}
-          SKIP_TLS_VERIFY: ${{ secrets.JENKINS_SKIP_TLS_VERIFY }} # optional
+          SKIP_TLS_VERIFY: ${{ secrets.JENKINS_SKIP_TLS_VERIFY }}
         run: |
           set -euo pipefail
-
-          # helper for curl TLS option
           TLS_OPT=""
           if [ "${SKIP_TLS_VERIFY:-}" = "true" ]; then
             TLS_OPT="--insecure"
           fi
 
-          # 1) Get Jenkins crumb (if CSRF is enabled)
           CRUMB_JSON=$(curl -sS $TLS_OPT -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
             "${JENKINS_URL}/crumbIssuer/api/json" || true)
 
-          # If crumb endpoint returned JSON, parse crumb; otherwise leave blank
           CRUMB_HEADER=""
           if echo "$CRUMB_JSON" | grep -q '"crumb"'; then
             CRUMB=$(echo "$CRUMB_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['crumb'])")
             CRUMB_FIELD=$(echo "$CRUMB_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['crumbRequestField'])")
             CRUMB_HEADER="-H ${CRUMB_FIELD}:$CRUMB"
-            echo "Got crumb header: $CRUMB_FIELD"
-          else
-            echo "No crumb (crumbIssuer) response — proceeding without crumb header."
           fi
 
-          # 2) Trigger build (no parameters). For parameterized jobs use buildWithParameters
           TRIGGER_URL="${JENKINS_URL}/${JENKINS_JOB_PATH}/build"
-          echo "Triggering: $TRIGGER_URL"
-
-          # trigger and show HTTP status
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $TLS_OPT -X POST \
             -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
             $CRUMB_HEADER \
             "$TRIGGER_URL")
 
-          echo "Jenkins responded with HTTP status: $HTTP_STATUS"
+          echo "Jenkins HTTP status: $HTTP_STATUS"
           if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ]; then
             echo "Trigger succeeded."
           else
-            echo "Trigger may have failed (status $HTTP_STATUS)."
+            echo "Trigger failed (status $HTTP_STATUS)."
             exit 1
           fi
