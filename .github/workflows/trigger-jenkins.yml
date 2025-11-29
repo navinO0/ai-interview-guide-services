@@ -1,61 +1,62 @@
-      - name: Poll queue & get build URL (better)
+name: Trigger Jenkins on push
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger-jenkins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Get Jenkins Crumb (CSRF) and trigger job
         env:
           JENKINS_URL: ${{ secrets.JENKINS_URL }}
           JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
-        id: poll_queue
+          JENKINS_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+          JENKINS_JOB_PATH: ${{ secrets.JENKINS_JOB_PATH }}
+          SKIP_TLS_VERIFY: ${{ secrets.JENKINS_SKIP_TLS_VERIFY }} # optional
         run: |
           set -euo pipefail
 
-          # Use the queue_loc from previous step if present (old syntax warns; adapt if needed)
-          QUEUE_LOC="${{ steps.trigger-jenkins.outputs.queue_loc || '' }}"
-          if [ -n "$QUEUE_LOC" ]; then
-            echo "Will poll specific queue item: $QUEUE_LOC"
-            # Normalize to api/json endpoint for the item
-            # If queue loc ends with a slash, remove it
-            QUEUE_LOC="${QUEUE_LOC%/}"
-            QUEUE_API="${QUEUE_LOC}/api/json"
-            echo "Queue API: $QUEUE_API"
-
-            for i in $(seq 1 120); do
-              sleep 2
-              echo "Checking queue item ($i)..."
-              QITEM=$(curl -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "$QUEUE_API")
-              # Print why/blocked for debugging without leaking secrets
-              echo "$QITEM" | jq -r '.why, .blocked' | sed 's/^/  /'
-              # Try to read executable.url
-              BUILD_URL=$(echo "$QITEM" | jq -r '.executable.url // empty' || true)
-              if [ -n "$BUILD_URL" ]; then
-                echo "Found build URL from queue item: $BUILD_URL"
-                echo "::set-output name=build_url::$BUILD_URL"
-                exit 0
-              fi
-            done
-
-            echo "Timed out waiting for queue item to become an executable."
-            # Fall through to global queue fallback
-          else
-            echo "No specific queue location available; falling back to global queue scan."
+          # helper for curl TLS option
+          TLS_OPT=""
+          if [ "${SKIP_TLS_VERIFY:-}" = "true" ]; then
+            TLS_OPT="--insecure"
           fi
 
-          # Fallback: scan global queue for the job's executable (best-effort)
-          echo "Polling global queue for job ${JENKINS_JOB}..."
-          BUILD_URL=""
-          for i in $(seq 1 60); do
-            sleep 2
-            QJSON=$(curl -s -u "${JENKINS_USER}:${JENKINS_API_TOKEN}" "${JENKINS_URL}/queue/api/json")
-            BUILD_URL=$(echo "$QJSON" | jq -r --arg JOB "$JENKINS_JOB" '
-              .items[]? |
-              select(.task.name == $JOB) |
-              .executable.url // empty' | head -n1 || true)
-            if [ -n "$BUILD_URL" ]; then
-              echo "Found build URL: $BUILD_URL"
-              echo "::set-output name=build_url::$BUILD_URL"
-              exit 0
-            fi
-            echo "Waiting for Jenkins to assign a build... ($i)"
-          done
+          # 1) Get Jenkins crumb (if CSRF is enabled)
+          CRUMB_JSON=$(curl -sS $TLS_OPT -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+            "${JENKINS_URL}/crumbIssuer/api/json" || true)
 
-          echo "Timed out waiting for build to be created from queue (global fallback)."
-          exit 3
+          # If crumb endpoint returned JSON, parse crumb; otherwise leave blank
+          CRUMB_HEADER=""
+          if echo "$CRUMB_JSON" | grep -q '"crumb"'; then
+            CRUMB=$(echo "$CRUMB_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['crumb'])")
+            CRUMB_FIELD=$(echo "$CRUMB_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['crumbRequestField'])")
+            CRUMB_HEADER="-H ${CRUMB_FIELD}:$CRUMB"
+            echo "Got crumb header: $CRUMB_FIELD"
+          else
+            echo "No crumb (crumbIssuer) response — proceeding without crumb header."
+          fi
+
+          # 2) Trigger build (no parameters). For parameterized jobs use buildWithParameters
+          TRIGGER_URL="${JENKINS_URL}/${JENKINS_JOB_PATH}/build"
+          echo "Triggering: $TRIGGER_URL"
+
+          # trigger and show HTTP status
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $TLS_OPT -X POST \
+            -u "${JENKINS_USER}:${JENKINS_TOKEN}" \
+            $CRUMB_HEADER \
+            "$TRIGGER_URL")
+
+          echo "Jenkins responded with HTTP status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ]; then
+            echo "Trigger succeeded."
+          else
+            echo "Trigger may have failed (status $HTTP_STATUS)."
+            exit 1
+          fi
