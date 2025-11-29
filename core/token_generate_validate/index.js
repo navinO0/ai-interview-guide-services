@@ -83,7 +83,7 @@ async function validateAccessToken({ request }, reply, app) {
             // console.log("this api doesn't require token")
         }
     } catch (error) {
-        return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at catch block" });
+        return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at catch block", error });
     }
 };
 
