@@ -1,23 +1,16 @@
-name: Trigger Jenkins Pipeline (safe)
-
-on:
-  workflow_dispatch:    # allows manual run
-  push:
-    branches: [ main ]
-  pull_request:
-    types: [opened, synchronize, reopened]
-
 jobs:
   trigger-jenkins:
     runs-on: ubuntu-latest
+    environment: jenkins-trigger   # <-- required to access secrets stored in that Environment
     steps:
-      - name: Ensure env present
+      - name: Trigger Jenkins Job
         env:
           JENKINS_URL: ${{ secrets.JENKINS_URL }}
           JENKINS_USER: ${{ secrets.JENKINS_USER }}
           JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
           JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
         run: |
+          # fail early if any missing (no secret value will be printed)
           missing=""
           [ -z "$JENKINS_URL" ] && missing="${missing} JENKINS_URL"
           [ -z "$JENKINS_USER" ] && missing="${missing} JENKINS_USER"
@@ -25,21 +18,10 @@ jobs:
           [ -z "$JENKINS_JOB" ] && missing="${missing} JENKINS_JOB"
 
           if [ -n "$missing" ]; then
-            echo "ERROR: The following required secrets are missing or empty:${missing}"
-            echo "→ Go to: Repo → Settings → Secrets and variables → Actions and add them."
+            echo "ERROR: missing secrets:${missing}"
             exit 1
           fi
 
-          echo "All required envs present (values hidden)."
-
-      - name: Trigger Jenkins job
-        env:
-          JENKINS_URL: ${{ secrets.JENKINS_URL }}
-          JENKINS_USER: ${{ secrets.JENKINS_USER }}
-          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
-          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
-        run: |
           echo "Triggering Jenkins job: $JENKINS_JOB"
-          curl -X POST \
-            --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
+          curl -X POST --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
             "$JENKINS_URL/job/$JENKINS_JOB/build" -v
