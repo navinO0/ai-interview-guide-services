@@ -1,16 +1,14 @@
 jobs:
   trigger-jenkins:
     runs-on: ubuntu-latest
-    environment: jenkins-trigger   # <-- required to access secrets stored in that Environment
     steps:
-      - name: Trigger Jenkins Job
+      - name: Ensure secrets present & trigger Jenkins
         env:
           JENKINS_URL: ${{ secrets.JENKINS_URL }}
           JENKINS_USER: ${{ secrets.JENKINS_USER }}
           JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
           JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
         run: |
-          # fail early if any missing (no secret value will be printed)
           missing=""
           [ -z "$JENKINS_URL" ] && missing="${missing} JENKINS_URL"
           [ -z "$JENKINS_USER" ] && missing="${missing} JENKINS_USER"
