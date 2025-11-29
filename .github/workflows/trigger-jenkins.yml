@@ -1,0 +1,24 @@
+name: Trigger Jenkins Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  trigger-jenkins:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Jenkins Job
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}
+          JENKINS_USER: ${{ secrets.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+          JENKINS_JOB: ${{ secrets.JENKINS_JOB }}
+        run: |
+          echo "Triggering Jenkins job: $JENKINS_JOB"
+          curl -X POST \
+            --user "$JENKINS_USER:$JENKINS_API_TOKEN" \
+            "$JENKINS_URL/job/$JENKINS_JOB/build"
