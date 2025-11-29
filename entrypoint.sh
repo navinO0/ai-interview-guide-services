@@ -4,15 +4,54 @@ set -eu
 # Optional env file path mounted into container (from Jenkins)
 ENV_FILE_PATH="${ENV_FILE_PATH:-/etc/app/.env}"
 
-# Normalize line endings if file is mounted
+log() { printf '%s %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"; }
+
+log "entrypoint: starting"
+
+# Normalize line endings for mounted env file if it exists
 if [ -f "$ENV_FILE_PATH" ]; then
   if command -v dos2unix >/dev/null 2>&1; then
     dos2unix "$ENV_FILE_PATH" || true
   fi
 fi
 
-# Write runtime frontend config (adjust keys as your frontend expects)
-cat > /usr/src/app/public/env-config.js <<'EOF'
+# Candidate directories where frontend static file might live
+CANDIDATE_DIRS="
+/usr/src/app/public
+/usr/src/app/build
+/usr/src/app/dist
+/usr/src/app
+"
+
+# Choose first existing candidate, or create the first one (/usr/src/app/public) if none exist
+TARGET_DIR=""
+for d in $CANDIDATE_DIRS; do
+  if [ -d "$d" ]; then
+    TARGET_DIR="$d"
+    break
+  fi
+done
+
+if [ -z "$TARGET_DIR" ]; then
+  # nothing exists — try to create public dir (common convention)
+  TARGET_DIR="/usr/src/app/public"
+  log "No candidate dir found; creating ${TARGET_DIR}"
+  if ! mkdir -p "$TARGET_DIR" 2>/dev/null; then
+    log "WARNING: Failed to create ${TARGET_DIR} (permission issue?). Will try app root instead."
+    TARGET_DIR="/usr/src/app"
+    # ensure app root exists
+    mkdir -p "$TARGET_DIR" 2>/dev/null || true
+  fi
+else
+  log "Found existing target dir: ${TARGET_DIR}"
+fi
+
+# Write runtime frontend config into chosen location
+ENV_JS_PATH="${TARGET_DIR%/}/env-config.js"
+log "Writing frontend runtime config to ${ENV_JS_PATH}"
+
+# Use a here-doc with safe expansion: expand env variables
+cat > "${ENV_JS_PATH}" <<EOF
 window.__ENV__ = {
   HOST: "${HOST:-}",
   PORT: "${PORT:-}",
@@ -22,8 +61,13 @@ window.__ENV__ = {
 };
 EOF
 
+# Ensure readable permissions for web server/user
+chmod 644 "${ENV_JS_PATH}" || true
+
 # Create .env for server-side dotenv usage
-cat > /usr/src/app/.env <<EOF
+ENV_FILE_APP="/usr/src/app/.env"
+log "Writing server .env to ${ENV_FILE_APP}"
+cat > "${ENV_FILE_APP}" <<EOF
 HOST=${HOST:-0.0.0.0}
 PORT=${PORT:-3000}
 
@@ -58,9 +102,9 @@ BACKUP_CRON_SCHEDULE=${BACKUP_CRON_SCHEDULE:-"0 * * * *"}
 GEMINI_API_KEY=${GEMINI_API_KEY:-}
 EOF
 
-# Set permissions
-chmod 600 /usr/src/app/.env || true
-chmod 644 /usr/src/app/public/env-config.js || true
+chmod 600 "${ENV_FILE_APP}" || true
 
-# Exec the container's CMD
+log "entrypoint: finished writing runtime config. Exec'ing command -> $*"
+
+# Exec the container's CMD (so signals propagate)
 exec "$@"
