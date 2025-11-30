@@ -41,30 +41,30 @@ async function validateAccessToken({ request }, reply, app) {
         const index = APIs.findIndex(e => url.includes(e));
         if (index === -1) {
             if (request.headers && !request.headers['authorization']) {
-                return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at validateAccessToken" });
+                return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
             } else {
                 if (request.headers['authorization'].includes("Bearer")) {
                     const token = request.headers['authorization'].split(" ")[1];
                     try {
                         if (!token || token === '') {
-                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at validateAccessToken" });
+                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
                         }
                         const decoded = jwt.verify(token, app.CONFIG.SECURITY_KEYS.JWT_SECRET);
                         request.token = token
                         request.user_info = decoded
                         if (!decoded || Object.keys(decoded).length === 0) {
-                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at jwt verification" });
+                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
                         }
                          const cachedData = await getCacheValue(decoded.username + CONFIG.REDIS.DEVICES_KEY)
                         if (!cachedData) {
-                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at device verification" });
+                            return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
                         }
                         const devices = JSON.parse(cachedData)
                             const exist = devices.find(e => e.
                                 fingerprint === decoded.
                                     fingerprint)
                             if (!exist) {
-                                return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at device verification" });
+                                return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
                             }
                         // const chached_token = await getCacheValue(decoded.username + "_token")
                         // if (chached_token !== token) {
@@ -75,7 +75,7 @@ async function validateAccessToken({ request }, reply, app) {
                         throw error;
                     }
                 } else {
-                    return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at authorization header verification" });
+                    return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required" });
                 }
             }
         } else {
@@ -83,7 +83,7 @@ async function validateAccessToken({ request }, reply, app) {
             // console.log("this api doesn't require token")
         }
     } catch (error) {
-        return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required failed at catch block", error });
+        return reply.code(401).send({ code: 401, type: 'error', "message": "Authorization required", error });
     }
 };
 
