@@ -51,6 +51,8 @@ const helmetConfig = {
     }
 }
 
+const { generateCurlCommand } = require('./core/utils/curl-generator');
+
 async function serverSetup(swaggerURL) {
     try {
         const app = fastify({
@@ -74,11 +76,11 @@ async function serverSetup(swaggerURL) {
             routePrefix: swaggerURL + 'swagger/public/documentation',
         });
         app.addHook('onRequest', async (request, reply) => {
-            request.log.info({
-                method: request.method,
-                url: request.url,
-                headers: request.headers, 
-                body: request.body
+            const curl = generateCurlCommand(request);
+            logger.info({
+                headers: request.headers,
+                body: request.body,
+                curl: curl
             }, 'Incoming Request');
         });
 
@@ -87,6 +89,16 @@ async function serverSetup(swaggerURL) {
                 statusCode: reply.statusCode,
                 responseTime: reply.getResponseTime()
             }, 'Response Sent');
+        });
+
+        app.setErrorHandler((error, request, reply) => {
+            request.log.error(error);
+            const statusCode = error.statusCode || 500;
+            reply.status(statusCode).send({
+                statusCode,
+                error: error.name || 'Internal Server Error',
+                message: error.message
+            });
         });
 
         // Redis & Database Setup
