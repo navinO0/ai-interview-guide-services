@@ -10,7 +10,7 @@ const urlPrefix = "/ai/interview/";
 
 (async () => {
     try {
-        const parentDirs = ["ai-interview"];
+        const parentDirs = ["user", "ai-interview"];
         const server = await serverSetup(urlPrefix); // Initialize server before using it
 
         // Using for...of to handle async properly

@@ -3,33 +3,39 @@ const jwt = require('jsonwebtoken');
 
 const { getCacheValue, setCacheValue } = require('../redis_config/redis_client');
 const CONFIG = require('../config');
-const genereateToke = async (app, userdata, devvice_info) => {
-
-    // Generate a JWT token
-    userdata.fingerprint = devvice_info.fingerprint
-    const token = jwt.sign(
-        userdata,
-        app.CONFIG.SECURITY_KEYS.JWT_SECRET,
-        { expiresIn: CONFIG.REDIS.TOKEN_EXPIRY_IN_SECS }
-    );
-    await setCacheValue(userdata.username + "_token", token, CONFIG.REDIS.TOKEN_EXPIRY_IN_SECS)
-    const cachedData = await getCacheValue(userdata.username + CONFIG.REDIS.DEVICES_KEY)
-    if (cachedData) {
-        const devices = JSON.parse(cachedData)
-        const exist = devices.find(e => e.
-            fingerprint === devvice_info.
-                fingerprint)
-        if (exist) {
-            return token
+const generateToken = async (app, userdata, device_info) => {
+    try {
+        // Generate a JWT token
+        userdata.fingerprint = device_info.fingerprint;
+        const token = jwt.sign(
+            userdata,
+            app.CONFIG.SECURITY_KEYS.JWT_SECRET,
+            { expiresIn: CONFIG.REDIS.TOKEN_EXPIRY_IN_SECS }
+        );
+        
+        await setCacheValue(userdata.username + "_token", token, CONFIG.REDIS.TOKEN_EXPIRY_IN_SECS);
+        
+        const cachedData = await getCacheValue(userdata.username + CONFIG.REDIS.DEVICES_KEY);
+        
+        if (cachedData) {
+            const devices = JSON.parse(cachedData);
+            const exist = devices.find(e => e.fingerprint === device_info.fingerprint);
+            
+            if (!exist) {
+                devices.push(device_info);
+                await setCacheValue(userdata.username + CONFIG.REDIS.DEVICES_KEY, JSON.stringify(devices));
+            }
+        } else {
+            await setCacheValue(userdata.username + CONFIG.REDIS.DEVICES_KEY, JSON.stringify([device_info]));
         }
-        devices.push(devvice_info)
-        await setCacheValue(userdata.username + CONFIG.REDIS.DEVICES_KEY, JSON.stringify(devices))
-    } else {
-        await setCacheValue(userdata.username + CONFIG.REDIS.DEVICES_KEY, JSON.stringify([devvice_info]))
+        
+        return token;
+    } catch (error) {
+        console.error("Token generation error:", error);
+        throw error;
     }
-    // await setCacheValue(userdata.username+"_token_devices", token, CONFIG.REDIS.TOKEN_EXPIRY_IN_SECS)
-    return token
 }
+
 
 
 const APIs = ["login", "logout", "signup", "public", "internal", "socket.io"]
@@ -97,4 +103,4 @@ async function decodeToken(token) {
 }
 
 
-module.exports = { genereateToke, validateAccessToken, decodeToken }
+module.exports = { generateToken, validateAccessToken, decodeToken }

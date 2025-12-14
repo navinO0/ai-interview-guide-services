@@ -1,0 +1,3 @@
+[submodule "user-management-services"]
+	path = user-management-services
+	url = https://github.com/navinO0/user-management-services
