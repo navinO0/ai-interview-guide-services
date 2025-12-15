@@ -1,0 +1,7 @@
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\user\routes.js
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\ai-interview\routes.js
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\user\routes.js
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\ai-interview\routes.js
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\ai-interview\routes.js
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\ai-interview\routes.js
+Registering route from: F:\prjects\interview-guide-ai\interview-guide-ai-services\ai-interview\routes.js

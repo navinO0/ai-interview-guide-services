@@ -4,6 +4,7 @@ const CONFIG = {
     HOST: process.env.HOST || '0.0.0.0',
     PORT: process.env.PORT || 3001,
     SOCKET_PORT : process.env.SOCKET_PORT || 3008,
+    ENABLE_LOGS: process.env.ENABLE_LOGS === 'true',
     APP_DB_CONFIG: {
         client: process.env.DB_CLIENT || 'postgres',
         pool: {

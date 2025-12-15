@@ -12,7 +12,7 @@ const os = require('os');
 const { ajvCompiler } = require('./core/schemas/index');
 const { v4: uuid } = require('uuid');
 const { knexClientCreate } = require('./core/knex_query_builder');
-const { validateAccessToken } = require('./core/token_generate_validate');
+// const { validateAccessToken } = require('./core/token_generate_validate'); // Deprecated, using submodule
 const CONFIG = require('./core/config');
 const { redisClientCreate } = require('./core/redis_config');
 const fastifyCors = require("@fastify/cors");
@@ -51,7 +51,7 @@ const helmetConfig = {
     }
 }
 
-const { generateCurlCommand } = require('./core/utils/curl-generator');
+
 
 async function serverSetup(swaggerURL) {
     try {
@@ -75,21 +75,7 @@ async function serverSetup(swaggerURL) {
         app.register(swaggerUi, {
             routePrefix: swaggerURL + 'swagger/public/documentation',
         });
-        app.addHook('onRequest', async (request, reply) => {
-            const curl = generateCurlCommand(request);
-            logger.info({
-                headers: request.headers,
-                body: request.body,
-                curl: curl
-            }, 'Incoming Request');
-        });
-
-        app.addHook('onResponse', async (request, reply) => {
-            request.log.info({
-                statusCode: reply.statusCode,
-                responseTime: reply.getResponseTime()
-            }, 'Response Sent');
-        });
+        app.register(require('./core/logger/request-logger'));
 
         app.setErrorHandler((error, request, reply) => {
             request.log.error(error);
@@ -101,20 +87,51 @@ async function serverSetup(swaggerURL) {
             });
         });
 
-        // Redis & Database Setup
         await redisClientCreate(app, CONFIG.REDIS, 'redis');
         await knexClientCreate(app, CONFIG.APP_DB_CONFIG, 'knex');
 
+        // Initialize the submodule's redis client with the main app's redis instance
+        const { initializeRedis } = require('./user-management-services/utils/redisClient');
+        await initializeRedis(app.redis);
+
+        // User Management Service is now a separate process. 
+        // We only keep the shared redis/token logic here for validation.
+
+
         const httpServer = createServer(app.server);
 
+        const { validateAccessToken } = require('./user-management-services/utils/tokenGenerator');
+        
+        // Map main config to submodule config structure for token operations
+        const authConfig = {
+            JWT_SECRET: CONFIG.SECURITY_KEYS.JWT_SECRET,
+            TOKEN_EXPIRY: CONFIG.REDIS.TOKEN_EXPIRY_IN_SECS,
+            DEVICES_KEY: CONFIG.REDIS.DEVICES_KEY
+        };
+
         app.addHook('onRequest', async (request, reply) => {
-            return await validateAccessToken({ request }, reply, app);
+            return await validateAccessToken(request, reply, app, authConfig);
         });
 
         await app.register(cronPlugin);
         
         await ajvCompiler(app, {});
         
+
+        // Graceful shutdown
+        const closeGracefully = async (signal) => {
+            app.log.info(`Received signal to terminate: ${signal}`);
+            await app.close();
+            // process.exit(0); // fastify.close() handles unlistening
+        };
+        process.on('SIGINT', () => closeGracefully('SIGINT'));
+        process.on('SIGTERM', () => closeGracefully('SIGTERM'));
+
+        await ajvCompiler(app, {});
+        
+        app.ready(() => {
+            console.log(app.printRoutes());
+        });
 
         return app  ;
     } catch (err) {

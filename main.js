@@ -10,10 +10,8 @@ const urlPrefix = "/ai/interview/";
 
 (async () => {
     try {
-        const parentDirs = ["user", "ai-interview"];
-        const server = await serverSetup(urlPrefix); // Initialize server before using it
-
-        // Using for...of to handle async properly
+        const parentDirs = ["ai-interview"];
+        const server = await serverSetup(urlPrefix);
         for (const parentDir of parentDirs) {
             let parentDirectory = path.resolve(__dirname, `./${parentDir}`);
             const routes = getAllRoutes(parentDirectory);
@@ -22,8 +20,6 @@ const urlPrefix = "/ai/interview/";
                 server.register(route);
             }
         }
-
-        // Start the server
         await server.listen({ port: PORT, host: CONFIG.HOST })
             .then((address) => {
                 console.log("Everything is Loaded..!");
@@ -35,7 +31,8 @@ const urlPrefix = "/ai/interview/";
                 );
             })
             .catch((err) => {
-                throw new Error("Failed to start the server.", err);
+                console.error("Server Listen Error Details:", err);
+                throw new Error("Failed to start the server.");
             });
 
     } catch (err) {
